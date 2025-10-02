@@ -3,14 +3,17 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ required: true, unique: true })
+  @Prop({
+    required: true,
+    unique: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 30,
+  })
   username: string;
 
-  @Prop()
-  avatar?: string;
-
-  @Prop()
-  status?: string; // e.g. 'online' / 'offline'
+  @Prop({ default: 'offline', enum: ['online', 'offline'] })
+  status: string;
 }
 
 export type UserDocument = User & Document;

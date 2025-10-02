@@ -1,7 +1,14 @@
+// src/message/message.module.ts
 import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { Message, MessageSchema } from './schemas/message.schema';
 import { MessageService } from './message.service';
 
 @Module({
+  imports: [
+    MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
+  ],
   providers: [MessageService],
+  exports: [MessageService, MongooseModule], // Export for use in ChatModule
 })
 export class MessageModule {}
