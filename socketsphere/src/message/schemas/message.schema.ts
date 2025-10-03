@@ -11,6 +11,12 @@ export class Message {
 
   @Prop({ default: Date.now })
   timestamp: Date;
+
+  @Prop()
+  createdAt?: Date; // Add this
+
+  @Prop()
+  updatedAt?: Date; // Optional: add this too
 }
 
 export type MessageDocument = Message & Document;

@@ -9,7 +9,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       useFactory: (configService: ConfigService) => ({
         uri:
           configService.get<string>('MONGO_URI') ||
-          'mongodb://localhost:27017/socketsphere',
+          'mongodb://localhost:27017/nest-chat',
       }),
       inject: [ConfigService],
     }),
