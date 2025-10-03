@@ -4,10 +4,8 @@ import { MessageModule } from '../message/message.module';
 import { UserModule } from '../user/user.module';
 
 @Module({
-  imports: [
-    MessageModule, // Import to use MessageService
-    UserModule, // Import to use UserService
-  ],
+  imports: [MessageModule, UserModule],
   providers: [ChatGateway],
+  exports: [ChatGateway],
 })
 export class ChatModule {}

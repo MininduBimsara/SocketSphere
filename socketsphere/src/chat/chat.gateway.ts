@@ -15,8 +15,10 @@ import { CreateMessageDto } from '../message/dto/create-message.dto';
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // In production, specify your frontend URL
+    origin: ['http://localhost:3001', 'http://localhost:3000'],
+    credentials: true,
   },
+  transports: ['websocket', 'polling'],
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -42,6 +44,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('connected', {
       message: 'Successfully connected to chat server',
       socketId: client.id,
+      timestamp: new Date(),
     });
 
     // Send online users count
@@ -57,81 +60,97 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Find and remove user from online list
     let disconnectedUserId: string | null = null;
-    for (const [userId, socketId] of this.userSockets.entries()) {
+    for (const [userId, socketId] of this.userSockets) {
       if (socketId === client.id) {
         disconnectedUserId = userId;
-        this.userSockets.delete(userId);
         break;
       }
     }
 
-    // Update user status to offline
     if (disconnectedUserId) {
+      this.userSockets.delete(disconnectedUserId);
+
       try {
+        // Update user status to offline
         await this.userService.updateStatus(disconnectedUserId, 'offline');
-        this.server.emit('userStatusChanged', {
+
+        // Broadcast to all clients that user left
+        this.server.emit('userLeft', {
           userId: disconnectedUserId,
-          status: 'offline',
+          timestamp: new Date(),
         });
+
+        // Send updated online count
+        const onlineCount = this.userSockets.size;
+        this.server.emit('onlineCount', onlineCount);
+
+        this.logger.log(`User ${disconnectedUserId} disconnected`);
       } catch (error) {
-        this.logger.error(`Error updating user status: ${error.message}`);
+        this.logger.error(
+          `Error handling disconnect for user ${disconnectedUserId}: ${error.message}`,
+        );
       }
     }
-
-    // Broadcast updated online count
-    const onlineCount = this.userSockets.size;
-    this.server.emit('onlineCount', onlineCount);
   }
 
   /**
    * Handle user joining the chat
-   * Client sends: { userId: string }
+   * Client sends: { userId: string, username: string }
    */
   @SubscribeMessage('join')
   async handleJoin(
-    @MessageBody() payload: { userId: string },
+    @MessageBody() payload: { userId: string; username: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const { userId } = payload;
+      const { userId, username } = payload;
 
-      // Verify user exists
-      const user = await this.userService.findById(userId);
+      if (!userId || !username) {
+        client.emit('error', {
+          message: 'userId and username are required',
+        });
+        return { success: false, error: 'Missing required fields' };
+      }
 
       // Store socket mapping
       this.userSockets.set(userId, client.id);
 
+      // Get or create user
+      let user = await this.userService.findById(userId).catch(() => null);
+
+      if (!user) {
+        // Create new user if doesn't exist
+        user = await this.userService.createUser({ username });
+      }
+
       // Update user status to online
       await this.userService.updateStatus(userId, 'online');
 
-      // Notify the user
-      client.emit('joinSuccess', {
-        message: 'Successfully joined chat',
-        user,
-      });
-
       // Broadcast to all clients that user joined
       this.server.emit('userJoined', {
-        userId: user._id,
-        username: user.username,
+        userId,
+        username,
         timestamp: new Date(),
       });
 
-      // Broadcast user status changed
-      this.server.emit('userStatusChanged', {
-        userId: user._id,
-        status: 'online',
+      // Send to the joining user their info
+      client.emit('joinSuccess', {
+        user: {
+          _id: user._id,
+          username: user.username,
+          status: 'online',
+        },
       });
 
       // Send updated online count
       const onlineCount = this.userSockets.size;
       this.server.emit('onlineCount', onlineCount);
 
-      this.logger.log(`User ${user.username} joined the chat`);
+      this.logger.log(`User ${username} (${userId}) joined the chat`);
 
       return { success: true, user };
     } catch (error) {
-      this.logger.error(`Join error: ${error.message}`);
+      this.logger.error(`Join error: ${error.message}`, error.stack);
       client.emit('error', {
         message: 'Failed to join chat',
         error: error.message,
@@ -151,6 +170,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      if (!createMessageDto.userId || !createMessageDto.text) {
+        client.emit('error', {
+          message: 'userId and text are required',
+        });
+        return { success: false, error: 'Missing required fields' };
+      }
+
       // Save message to database
       const message = await this.messageService.createMessage(createMessageDto);
 
@@ -167,7 +193,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true, message };
     } catch (error) {
-      this.logger.error(`Send message error: ${error.message}`);
+      this.logger.error(`Send message error: ${error.message}`, error.stack);
       client.emit('error', {
         message: 'Failed to send message',
         error: error.message,
@@ -197,7 +223,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true };
     } catch (error) {
-      this.logger.error(`Get recent messages error: ${error.message}`);
+      this.logger.error(
+        `Get recent messages error: ${error.message}`,
+        error.stack,
+      );
       client.emit('error', {
         message: 'Failed to get recent messages',
         error: error.message,
@@ -220,6 +249,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId: payload.userId,
       username: payload.username,
     });
+
+    return { success: true };
   }
 
   /**
@@ -234,6 +265,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.broadcast.emit('userStoppedTyping', {
       userId: payload.userId,
     });
+
+    return { success: true };
   }
 
   /**
@@ -252,7 +285,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true };
     } catch (error) {
-      this.logger.error(`Get online users error: ${error.message}`);
+      this.logger.error(
+        `Get online users error: ${error.message}`,
+        error.stack,
+      );
       return { success: false, error: error.message };
     }
   }
@@ -295,41 +331,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true };
     } catch (error) {
-      this.logger.error(`Leave error: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Handle delete message
-   * Client sends: { messageId: string, userId: string }
-   */
-  @SubscribeMessage('deleteMessage')
-  async handleDeleteMessage(
-    @MessageBody() payload: { messageId: string; userId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    try {
-      const { messageId } = payload;
-
-      // Delete from database
-      await this.messageService.deleteMessage(messageId);
-
-      // Broadcast deletion to all clients
-      this.server.emit('messageDeleted', {
-        messageId,
-        timestamp: new Date(),
-      });
-
-      this.logger.log(`Message ${messageId} deleted`);
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error(`Delete message error: ${error.message}`);
-      client.emit('error', {
-        message: 'Failed to delete message',
-        error: error.message,
-      });
+      this.logger.error(`Leave error: ${error.message}`, error.stack);
       return { success: false, error: error.message };
     }
   }
