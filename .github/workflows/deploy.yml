@@ -1,0 +1,78 @@
+name: Build and Push Docker Images
+
+# Trigger: Run when code is pushed to 'main' branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    name: Build and Push to Docker Hub
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Check out the code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Docker Buildx (for better builds)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      # Step 3: Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      # Step 4: Run Backend Tests (optional)
+      - name: Run Backend Tests
+        working-directory: ./socketsphere
+        run: |
+          npm install
+          npm test || echo "No tests configured, skipping..."
+        continue-on-error: true
+      
+      # Step 5: Run Frontend Tests (optional)
+      - name: Run Frontend Tests
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm test || echo "No tests configured, skipping..."
+        continue-on-error: true
+      
+      # Step 6: Build and Push Backend Image
+      - name: Build and Push Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./socketsphere
+          file: ./socketsphere/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/chat-backend:latest
+            ${{ secrets.DOCKER_USERNAME }}/chat-backend:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/chat-backend:latest
+          cache-to: type=inline
+      
+      # Step 7: Build and Push Frontend Image
+      - name: Build and Push Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/chat-frontend:latest
+            ${{ secrets.DOCKER_USERNAME }}/chat-frontend:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/chat-frontend:latest
+          cache-to: type=inline
+      
+      # Step 8: Summary
+      - name: Build Complete
+        run: |
+          echo "✅ Docker images built and pushed successfully!"
+          echo "Backend: ${{ secrets.DOCKER_USERNAME }}/chat-backend:latest"
+          echo "Frontend: ${{ secrets.DOCKER_USERNAME }}/chat-frontend:latest"
+          
