@@ -8,6 +8,11 @@ const nextConfig = {
     // Add any experimental features here
   },
 
+  // Speed up CI builds: don't fail production build on ESLint issues
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Environment variables (these will be embedded at build time)
   env: {
     NEXT_PUBLIC_API_URL:

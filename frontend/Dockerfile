@@ -9,7 +9,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies (including dev dependencies for build)
-RUN npm ci
+# Add required system libraries for Next.js/sharp on Alpine
+RUN apk add --no-cache libc6-compat \
+  && npm ci
 
 # Stage 2: Builder
 FROM node:18-alpine AS builder
@@ -40,6 +42,9 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Create a non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
+
+# Ensure required system libraries exist at runtime
+RUN apk add --no-cache libc6-compat
 
 # Copy public assets
 COPY --from=builder /app/public ./public
