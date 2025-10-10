@@ -6,10 +6,20 @@ import { DatabaseModule } from './database/database.module';
 import { UserModule } from './user/user.module';
 import { MessageModule } from './message/message.module';
 import { ChatModule } from './chat/chat.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }), // Move this FIRST
+    // ConfigModule must be first for environment variables
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+
+    // Redis module (global)
+    RedisModule,
+
+    // Database and other modules
     DatabaseModule,
     UserModule,
     MessageModule,

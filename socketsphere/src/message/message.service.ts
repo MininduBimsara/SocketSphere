@@ -15,23 +15,51 @@ export class MessageService {
   ) {}
 
   /**
-   * Create and save a new message
+   * Create and save a new message (supports both REST API and WebSocket)
    * @param createMessageDto - DTO containing userId and text
-   * @returns Created message document with populated user info
+   * @returns Created message document
    */
   async createMessage(
-    createMessageDto: CreateMessageDto,
+    createMessageDto: CreateMessageDto | any,
   ): Promise<MessageDocument> {
-    const newMessage = new this.messageModel({
-      userId: new Types.ObjectId(createMessageDto.userId),
-      text: createMessageDto.text,
-      timestamp: new Date(),
-    });
+    // Check if userId is a valid MongoDB ObjectId
+    const isValidObjectId =
+      Types.ObjectId.isValid(createMessageDto.userId) &&
+      createMessageDto.userId.match(/^[0-9a-fA-F]{24}$/);
 
-    const savedMessage = await newMessage.save();
+    let newMessage: any;
 
-    // Populate user information before returning
-    return await savedMessage.populate('userId', 'username status');
+    if (isValidObjectId) {
+      // REST API case: userId is a MongoDB ObjectId
+      newMessage = new this.messageModel({
+        userId: new Types.ObjectId(createMessageDto.userId),
+        text: createMessageDto.text,
+        timestamp: createMessageDto.timestamp || new Date(),
+      });
+
+      const savedMessage = await newMessage.save();
+      // Populate user information before returning
+      return await savedMessage.populate('userId', 'username status');
+    } else {
+      // WebSocket case: userId is a custom string ID
+      newMessage = new this.messageModel({
+        userId: null, // Don't set userId for WebSocket messages
+        username: createMessageDto.username, // Use username from WebSocket
+        customUserId: createMessageDto.userId, // Store custom ID
+        text: createMessageDto.text,
+        timestamp: createMessageDto.timestamp || new Date(),
+      });
+
+      // If userMongoId is provided (when user exists in DB), add it
+      if (
+        createMessageDto.userMongoId &&
+        Types.ObjectId.isValid(createMessageDto.userMongoId)
+      ) {
+        newMessage.userId = new Types.ObjectId(createMessageDto.userMongoId);
+      }
+
+      return await newMessage.save();
+    }
   }
 
   /**
