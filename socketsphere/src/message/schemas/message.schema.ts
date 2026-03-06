@@ -3,27 +3,21 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Message {
-  // MongoDB User reference (for REST API - optional for WebSocket messages)
   @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   userId?: Types.ObjectId;
 
-  // Username (required for WebSocket messages, optional for REST API)
   @Prop({ required: false, trim: true })
   username?: string;
 
-  // Custom user ID from WebSocket (e.g., "user_1760127880849_gq2a88d5j")
   @Prop({ required: false })
   customUserId?: string;
 
-  // Message text (always required)
   @Prop({ required: true, trim: true })
   text: string;
 
-  // Timestamp (always required)
   @Prop({ default: Date.now })
   timestamp: Date;
 
-  // Mongoose timestamps
   @Prop()
   createdAt?: Date;
 
@@ -34,7 +28,12 @@ export class Message {
 export type MessageDocument = Message & Document;
 export const MessageSchema = SchemaFactory.createForClass(Message);
 
-// Add index for better query performance
-MessageSchema.index({ timestamp: -1 });
-MessageSchema.index({ userId: 1 });
-MessageSchema.index({ customUserId: 1 });
+// Enhanced indexes for better query performance
+MessageSchema.index({ timestamp: -1 }); // Already exists - for sorting
+MessageSchema.index({ userId: 1 }); // Already exists - for user messages
+MessageSchema.index({ customUserId: 1 }); // Already exists - for WebSocket users
+
+// Compound indexes for common query patterns
+MessageSchema.index({ userId: 1, timestamp: -1 }); // User messages sorted by time
+MessageSchema.index({ timestamp: -1, userId: 1 }); // Recent messages with user info
+MessageSchema.index({ text: 'text' }); // Text search index
